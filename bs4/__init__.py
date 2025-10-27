@@ -33,15 +33,14 @@ __all__ = [
     "Tag",
     "TemplateString",
     "ElementFilter",
+    "SoupReplacer",
     "UnicodeDammit",
     "CData",
     "Doctype",
-
     # Exceptions
     "FeatureNotFound",
     "ParserRejectedMarkup",
     "StopParsing",
-
     # Warnings
     "AttributeResemblesVariableWarning",
     "GuessedAtParserWarning",
@@ -88,10 +87,7 @@ from .element import (
     TemplateString,
 )
 from .formatter import Formatter
-from .filter import (
-    ElementFilter,
-    SoupStrainer,
-)
+from .filter import ElementFilter, SoupStrainer, SoupReplacer
 from typing import (
     Any,
     cast,
@@ -215,6 +211,7 @@ class BeautifulSoup(Tag):
         from_encoding: Optional[_Encoding] = None,
         exclude_encodings: Optional[_Encodings] = None,
         element_classes: Optional[Dict[Type[PageElement], Type[PageElement]]] = None,
+        replacer=None,
         **kwargs: Any,
     ):
         """Constructor.
@@ -435,6 +432,8 @@ class BeautifulSoup(Tag):
         self.known_xml = self.is_xml
         self._namespaces = dict()
         self.parse_only = parse_only
+
+        self.replacer = replacer
 
         if hasattr(markup, "read"):  # It's a file-type object.
             markup = markup.read()
@@ -1018,6 +1017,12 @@ class BeautifulSoup(Tag):
         # print("Start tag %s: %s" % (name, attrs))
         self.endData()
 
+        if getattr(self, "replacer", None) is not None:
+            try:
+                name = self.replacer.rename(name)
+            except Exception:
+                pass
+
         if (
             self.parse_only
             and len(self.tagStack) <= 1
@@ -1060,6 +1065,13 @@ class BeautifulSoup(Tag):
         """
         # print("End tag: " + name)
         self.endData()
+
+        if getattr(self, "replacer", None) is not None:
+            try:
+                name = self.replacer.rename(name)
+            except Exception:
+                pass
+
         self._popToTag(name, nsprefix)
 
     def handle_data(self, data: str) -> None:

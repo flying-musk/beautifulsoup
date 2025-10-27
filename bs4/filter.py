@@ -680,3 +680,22 @@ class SoupStrainer(ElementFilter):
         :meta private:
         """
         return element if self.match(element) else None
+
+
+class SoupReplacer:
+    """
+    A simple parsing-time tag replacer, analogous to SoupStrainer in spirit.
+    Replaces every start/end tag named `og_tag` with `alt_tag` during parsing.
+    """
+
+    def __init__(self, og_tag: str, alt_tag: str):
+        if not og_tag or not alt_tag:
+            raise ValueError("SoupReplacer requires non-empty og_tag and alt_tag")
+        self.og_tag = og_tag
+        self.alt_tag = alt_tag
+
+    def rename(self, name: str) -> str:
+        # name can be None in some edge cases; guard for safety
+        if not name:
+            return name
+        return self.alt_tag if name == self.og_tag else name
