@@ -676,6 +676,13 @@ class BeautifulSoup(Tag):
         self.preserve_whitespace_tag_stack = []
         self.string_container_stack = []
         self._most_recent_element = None
+        if getattr(self, "replacer", None) is not None:
+            reset = getattr(self.replacer, "reset", None)
+            if callable(reset):
+                try:
+                    reset()
+                except Exception:
+                    pass
         self.pushTag(self)
 
     def new_tag(
@@ -1017,6 +1024,9 @@ class BeautifulSoup(Tag):
         # print("Start tag %s: %s" % (name, attrs))
         self.endData()
 
+        original_name = name
+
+        # ----- (A) M2：在建 Tag 前先做簡單字串 rename（pair-mode、也方便 endtag 配對）
         if getattr(self, "replacer", None) is not None:
             try:
                 name = self.replacer.rename(name)
@@ -1049,6 +1059,15 @@ class BeautifulSoup(Tag):
         )
         if tag is None:
             return tag
+
+        # ----- (B) M3：Tag 剛被建立 -> 當下套用 transformers（真正的「during parsing」）
+        if getattr(self, "replacer", None) is not None:
+            # 在 pushTag 之前套用，讓 stack 內就已經是轉換後的 name/attrs
+            try:
+                self.replacer.on_start_tag(original_name, tag)
+            except Exception:
+                pass
+
         if self._most_recent_element is not None:
             self._most_recent_element.next_element = tag
         self._most_recent_element = tag
@@ -1068,7 +1087,7 @@ class BeautifulSoup(Tag):
 
         if getattr(self, "replacer", None) is not None:
             try:
-                name = self.replacer.rename(name)
+                name = self.replacer.on_end_tag(name)
             except Exception:
                 pass
 

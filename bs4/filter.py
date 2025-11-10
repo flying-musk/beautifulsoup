@@ -11,6 +11,7 @@ from typing import (
     List,
     Optional,
     Sequence,
+    Tuple,
     Type,
     Union,
 )
@@ -684,18 +685,104 @@ class SoupStrainer(ElementFilter):
 
 class SoupReplacer:
     """
-    A simple parsing-time tag replacer, analogous to SoupStrainer in spirit.
-    Replaces every start/end tag named `og_tag` with `alt_tag` during parsing.
+    Two styles:
+        1) Pair-mode: SoupReplacer("b", "blockquote")
+        2) Transformer-mode: SoupReplacer(name_xformer=..., attrs_xformer=..., xformer=...)
+
+    During parsing, BeautifulSoup will call:
+        - rename(name)                 [used early for simple pair-mode + endtag mapping]
+        - apply_to_new_tag(tag)        [called right after Tag() is constructed]
     """
 
-    def __init__(self, og_tag: str, alt_tag: str):
-        if not og_tag or not alt_tag:
-            raise ValueError("SoupReplacer requires non-empty og_tag and alt_tag")
-        self.og_tag = og_tag
-        self.alt_tag = alt_tag
+    def __init__(
+        self,
+        og_tag: Optional[str] = None,
+        alt_tag: Optional[str] = None,
+        *,
+        name_xformer: Optional[Callable] = None,
+        attrs_xformer: Optional[Callable] = None,
+        xformer: Optional[Callable] = None,
+    ) -> None:
+        # Back-compat pair mode
+        self._pair_mode = og_tag is not None and alt_tag is not None
+        self._og_tag = og_tag
+        self._alt_tag = alt_tag
 
+        # Functional transformers (M3)
+        self.name_xformer = name_xformer
+        self.attrs_xformer = attrs_xformer
+        self.xformer = xformer
+
+        # Basic validation: either pair-mode, or any transformer present
+        if not self._pair_mode and not any([name_xformer, attrs_xformer, xformer]):
+            raise ValueError(
+                "SoupReplacer requires either (og_tag, alt_tag) or at least one transformer."
+            )
+        self._open_tag_stack: List[Tuple[Optional[str], str]] = []
+
+    # -------- M2 compat: used for start/end tag string -> simple rename
     def rename(self, name: str) -> str:
-        # name can be None in some edge cases; guard for safety
+        if self._pair_mode and name == self._og_tag:
+            return self._alt_tag  # simple string mapping
+        return name
+
+    def reset(self) -> None:
+        """Clear any per-parse bookkeeping."""
+        self._open_tag_stack.clear()
+
+    def on_start_tag(self, original_name: Optional[str], tag: "Tag") -> None:
+        """
+        Called by the parser immediately after Tag(...) is constructed,
+        but BEFORE it is pushed on the stack and linked.
+        Allows in-place mutation of tag.name and tag.attrs, or arbitrary side effects.
+        Order:
+            1) name_xformer(tag)   -> tag.name = returned_name
+            2) attrs_xformer(tag)  -> tag.attrs = returned_attrs
+            3) xformer(tag)        -> arbitrary side effects, no return required
+        """
+        # 1) name transform (if provided)
+        if callable(self.name_xformer):
+            try:
+                new_name = self.name_xformer(tag)
+                if isinstance(new_name, str) and new_name:
+                    tag.name = new_name
+            except Exception:
+                # Keep parsing robust
+                pass
+
+        # 2) attrs transform (if provided)
+        if callable(self.attrs_xformer):
+            try:
+                new_attrs = self.attrs_xformer(tag)
+                if isinstance(new_attrs, dict):
+                    tag.attrs.clear()
+                    tag.attrs.update(new_attrs)
+            except Exception:
+                pass
+
+        # 3) general side-effect transformer
+        if callable(self.xformer):
+            try:
+                self.xformer(tag)
+            except Exception:
+                pass
+
+        self._open_tag_stack.append((original_name, tag.name))
+
+    def on_end_tag(self, name: str) -> str:
+        """
+        Called when the parser sees an end tag. Returns the effective
+        tag name that should be used to close the current open tag.
+        """
         if not name:
             return name
-        return self.alt_tag if name == self.og_tag else name
+
+        for index in range(len(self._open_tag_stack) - 1, -1, -1):
+            original_name, new_name = self._open_tag_stack[index]
+            if name in (original_name, new_name):
+                self._open_tag_stack.pop(index)
+                return new_name
+
+        # Fallback to the simple mapping in case we never saw a matching start tag
+        # (e.g., parse_only filtered it out before transform could run).
+        return self.rename(name)
