@@ -35,6 +35,25 @@ The goal is to unburden application code from a second traversal when large docu
 | Ideal for | Quick rename, single-purpose adjustments | Content-aware processing workflows |
 | Execution time | During parsing (avoids second traversal) | During parsing (same one-pass benefit) |
 
+## How to Exercise the Milestone
+
+- **Application (Task 7)**  
+  Ensure `$PWD` is the repository root, then run:
+  ```
+  PYTHONPATH="$PWD" python3 apps/m3/task7.py <input.(html|xml)> <output.(html|xml)>
+  ```
+  Example with the provided samples:
+  ```
+  PYTHONPATH="$PWD" python3 apps/m3/task7.py apps/m3/sample.html apps/m3/sample_out.html
+  PYTHONPATH="$PWD" python3 apps/m3/task7.py apps/m3/sample.xml apps/m3/sample_out.xml
+  ```
+
+- **Tests**  
+  Execute the transformer-specific suite with:
+  ```
+  python3 -m pytest bs4/tests/test_soupreplacer_m3.py
+  ```
+
 ## Recommendation
 Keep both entry points:
 1. Pair-mode (`SoupReplacer("b", "blockquote")`) for quick renames.
