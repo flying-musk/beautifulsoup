@@ -501,6 +501,24 @@ class BeautifulSoup(Tag):
         clone.original_encoding = self.original_encoding
         return clone
 
+    def __iter__(self) -> Iterator[PageElement]:
+        """Iterate over all nodes in the soup (including itself and all descendants).
+        
+        This makes BeautifulSoup objects iterable, allowing you to do:
+        for node in soup:
+            print(node)
+        
+        The iteration traverses the tree and produces one node at a time
+        until all nodes have been visited. Nodes are not collected into a list;
+        this is a generator-based implementation for memory efficiency.
+        """
+        # First yield the BeautifulSoup object itself
+        # (Note: BeautifulSoup has hidden=True, so _self_and won't include it)
+        yield self
+        # Then yield all descendants
+        for descendant in self.descendants:
+            yield descendant
+
     def __getstate__(self) -> Dict[str, Any]:
         # Frequently a tree builder can't be pickled.
         d = dict(self.__dict__)
